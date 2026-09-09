@@ -1,13 +1,19 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date
 
 import pytest
 from unittest.mock import MagicMock, call, patch
+
+from django.test import override_settings
 
 import psycopg
 import pyarrow as pa
 from psycopg import sql
 from psycopg.pq import TransactionStatus
 from sshtunnel import BaseSSHTunnelForwarderError
+
+from posthog.psycopg_helpers import HOST_RESOLUTION_TIMEOUT_ERROR, TEMPORARY_HOST_RESOLUTION_ERROR
 
 from products.warehouse_sources.backend.temporal.data_imports.pipelines.core.arrow_utils import (
     TemporaryFileSizeExceedsLimitException,
@@ -17,6 +23,7 @@ from products.warehouse_sources.backend.temporal.data_imports.sources.common.sql
     ColumnTypeCategory,
     ValidatedRowFilter,
 )
+from products.warehouse_sources.backend.temporal.data_imports.sources.common.tests.resolver import addrinfo
 from products.warehouse_sources.backend.temporal.data_imports.sources.common.typings import SourceInputs
 from products.warehouse_sources.backend.temporal.data_imports.sources.generated_configs.redshift import (
     RedshiftSourceConfig,
@@ -1242,6 +1249,16 @@ class TestRedshiftSourceNonRetryableErrors:
         is_non_retryable = any(pattern in error_msg for pattern in non_retryable.keys())
         assert is_non_retryable
 
+    @pytest.mark.parametrize(
+        "error_msg",
+        [f"{HOST_RESOLUTION_TIMEOUT_ERROR} after 15.0s", TEMPORARY_HOST_RESOLUTION_ERROR],
+    )
+    def test_resolver_failures_before_the_connect_are_classified_retryable(self, error_msg):
+        source = RedshiftSource()
+        assert any(pattern in error_msg for pattern in source.get_retryable_errors())
+        assert not any(pattern in error_msg for pattern in source.get_non_retryable_errors())
+        assert source.get_retryable_errors() == set(source.get_retry_exhausted_errors().keys())
+
     def test_query_timeout_raw_message_is_non_retryable(self):
         # Mirrors the `InsufficientPrivilege` case above: the activity-level check matches raw
         # `str(exception)`, which for `QueryTimeoutException` is just the message with no class
@@ -1622,3 +1639,44 @@ class TestGetConnectionMetadata:
         metadata = RedshiftSource().get_connection_metadata(_make_config(schema=schema), team_id=1)
 
         assert metadata == {"engine": "redshift", "database": "dev", "schema": expected_schema}
+
+
+_REDSHIFT_MODULE = "products.warehouse_sources.backend.temporal.data_imports.sources.redshift.redshift"
+
+
+class TestRedshiftConnectDialsOnlyValidatedAddresses:
+    @contextmanager
+    def _production_cloud(self, *addresses: str) -> Iterator[MagicMock]:
+        with (
+            override_settings(CLOUD_DEPLOYMENT="US"),
+            patch(f"{_REDSHIFT_MODULE}.open_ssh_tunnel") as tunnel_mock,
+            patch(
+                "products.warehouse_sources.backend.temporal.data_imports.sources.common.mixins.settings"
+            ) as mock_settings,
+            patch("posthog.psycopg_helpers.socket.getaddrinfo", return_value=addrinfo(5439, *addresses)),
+            patch("posthog.psycopg_helpers.has_ipv6_route", return_value=True),
+            patch(f"{_REDSHIFT_MODULE}.psycopg.connect") as connect_mock,
+        ):
+            tunnel_mock.return_value.__enter__.return_value = ("db.example.com", 5439)
+            mock_settings.TEST = False
+            mock_settings.DEBUG = False
+            mock_settings.E2E_TESTING = False
+            connect_mock.return_value.__enter__.return_value = MagicMock()
+            yield connect_mock
+
+    def test_a_public_set_is_dialed_pinned_with_the_hostname_kept(self) -> None:
+        with self._production_cloud("52.1.2.3", "52.1.2.4") as connect_mock:
+            with RedshiftImplementation().connect(_make_config(), team_id=999):
+                pass
+
+        kwargs = connect_mock.call_args.kwargs
+        assert kwargs["host"] == "db.example.com,db.example.com"
+        assert kwargs["hostaddr"] == "52.1.2.3,52.1.2.4"
+        assert kwargs["port"] == 5439
+
+    def test_the_team_reaches_the_host_policy(self) -> None:
+        with self._production_cloud("10.0.0.5") as connect_mock:
+            with RedshiftImplementation().connect(_make_config(), team_id=2):
+                pass
+
+        assert connect_mock.call_args.kwargs["hostaddr"] == "10.0.0.5"
