@@ -22819,6 +22819,38 @@ export namespace Schemas {
       readonly created_at: string;
     }
 
+    export type DataQualityScheduleIntervalEnum = typeof DataQualityScheduleIntervalEnum[keyof typeof DataQualityScheduleIntervalEnum];
+
+
+    export const DataQualityScheduleIntervalEnum = {
+      '1hour': '1hour',
+      '6hour': '6hour',
+      '12hour': '12hour',
+      '24hour': '24hour',
+      '7day': '7day',
+    } as const;
+
+    export interface DataQualityCheckSchedule {
+      /** Schedule identifier. */
+      readonly id: string;
+      /** Schedule interval: 1hour, 6hour, 12hour, 24hour, or 7day. */
+      readonly interval: DataQualityScheduleIntervalEnum;
+      /** Whether the schedule runs automatically. */
+      readonly enabled: boolean;
+      /** Next scheduled execution time. */
+      readonly next_run_at: string;
+      /**
+         * Most recent scheduled execution time.
+         * @nullable
+         */
+      readonly last_run_at: string | null;
+      /**
+         * Most recent suite started by this schedule.
+         * @nullable
+         */
+      readonly last_suite_run: string | null;
+    }
+
     /**
      * JSON schema the config object is validated against.
      */
@@ -63535,6 +63567,19 @@ export namespace Schemas {
       readonly updated_at?: string | null;
     }
 
+    export interface PatchedDataQualityCheckScheduleUpdate {
+      /** How often all enabled checks on the metric run.
+       *
+       * * `1hour` - 1hour
+       * * `6hour` - 6hour
+       * * `12hour` - 12hour
+       * * `24hour` - 24hour
+       * * `7day` - 7day */
+      interval?: DataQualityScheduleIntervalEnum;
+      /** Whether checks run automatically on this schedule. */
+      enabled?: boolean;
+    }
+
     /**
      * The team-level materialization gate. Checks always run and warn; this only toggles blocking.
      */
@@ -93698,6 +93743,7 @@ export namespace Schemas {
      * * `Metric` - Metric
      * * `TableCertification` - TableCertification
      * * `DataQualityCheck` - DataQualityCheck
+     * * `DataQualityCheckSchedule` - DataQualityCheckSchedule
      * * `Billing` - Billing
      * * `Loop` - Loop
      * * `StamphogRepoConfig` - StamphogRepoConfig
@@ -93796,6 +93842,7 @@ export namespace Schemas {
       Metric: 'Metric',
       TableCertification: 'TableCertification',
       DataQualityCheck: 'DataQualityCheck',
+      DataQualityCheckSchedule: 'DataQualityCheckSchedule',
       Billing: 'Billing',
       Loop: 'Loop',
       StamphogRepoConfig: 'StamphogRepoConfig',
@@ -93880,6 +93927,7 @@ export namespace Schemas {
      * * `Metric` - Metric
      * * `TableCertification` - TableCertification
      * * `DataQualityCheck` - DataQualityCheck
+     * * `DataQualityCheckSchedule` - DataQualityCheckSchedule
      * * `Billing` - Billing
      * * `Loop` - Loop
      * * `StamphogRepoConfig` - StamphogRepoConfig
@@ -93966,6 +94014,7 @@ export namespace Schemas {
       Metric: 'Metric',
       TableCertification: 'TableCertification',
       DataQualityCheck: 'DataQualityCheck',
+      DataQualityCheckSchedule: 'DataQualityCheckSchedule',
       Billing: 'Billing',
       Loop: 'Loop',
       StamphogRepoConfig: 'StamphogRepoConfig',
