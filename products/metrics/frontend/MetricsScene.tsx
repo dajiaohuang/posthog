@@ -23,6 +23,7 @@ import { metricsUsageTrackingLogic } from './components/metricsUsageTrackingLogi
 import { MetricsViewer } from './components/MetricsViewer'
 import { metricsEmptyState } from './emptyState/metricsEmptyState'
 import { metricsFeaturePreviewGate } from './featurePreviewGate'
+import { MetricsAgentIntegration } from './MetricsAgentIntegration'
 import { DEFAULT_ACTIVE_TAB, MetricsSceneActiveTab, metricsSceneLogic } from './metricsSceneLogic'
 
 export const METRICS_LOGIC_KEY = 'metrics'
@@ -90,6 +91,7 @@ const MetricsSceneContent = (): JSX.Element => {
 
     return (
         <>
+            <MetricsAgentIntegration />
             <SceneTitleSection
                 name={sceneConfigurations[Scene.Metrics].name}
                 description={sceneConfigurations[Scene.Metrics].description}

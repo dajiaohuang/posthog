@@ -1,6 +1,7 @@
 import { registerNotebookLinkDrag } from 'scenes/notebooks/AddToNotebook/registerNotebookLinkDrag'
 
 import { registerLogsToolRenderers } from 'products/logs/frontend/agentTools/registerLogsToolRenderers'
+import { registerMetricsToolRenderers } from 'products/metrics/frontend/agentTools/registerMetricsToolRenderers'
 
 import { initKea } from '../initKea'
 import { loadPostHogJS } from '../loadPostHogJS'
@@ -31,9 +32,10 @@ export function bootApp(): void {
     // Link resolves its drag-to-notebook behavior through a seam so bundles without
     // notebooks (toolbar, exporter) don't ship them; the app opts in here
     registerNotebookLinkDrag()
-    // A logs tool card must resolve in any thread, including one opened before the lazy Logs
-    // scene has loaded, so the app claims the logs tool names here instead of that scene
+    // A logs or metrics tool card must resolve in any thread, including one opened before the lazy
+    // scene has loaded, so the app claims those tool names here instead of the scenes
     registerLogsToolRenderers()
+    registerMetricsToolRenderers()
 
     const idle =
         typeof window.requestIdleCallback === 'function'
