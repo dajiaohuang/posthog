@@ -13,6 +13,7 @@ _CREATED_AT_INCREMENTAL_FIELDS: list[IncrementalField] = [
     },
 ]
 
+
 # Node field selections per stream — conservative, well-documented fields only.
 _TRANSACTION_FIELDS = """
             id
@@ -54,13 +55,14 @@ class BraintreeEndpointConfig:
     # GraphQL input type name for the `search` field (e.g. TransactionSearchInput).
     input_type: str
     node_fields: str
+    # Field on `input_type` that filters on the node's `createdAt`, or None when the
+    # vendor's search input declares no equivalent. Sending a field the input type
+    # doesn't define is a GraphQL validation error, not an ignored filter, so there is
+    # no default: check the vendor's input type for every new endpoint.
+    created_at_search_field: str | None
     primary_key: str = "id"
     incremental_fields: list[IncrementalField] = field(default_factory=lambda: list(_CREATED_AT_INCREMENTAL_FIELDS))
     partition_key: str = "createdAt"
-    # Field on `input_type` that filters on the node's `createdAt`, or None when the
-    # vendor's search input declares no equivalent. Sending a field the input type
-    # doesn't define is a GraphQL validation error, not an ignored filter.
-    created_at_search_field: str | None = "createdAt"
 
 
 # `TransactionSearchInput` and `RefundSearchInput` both accept a createdAt range
@@ -75,11 +77,13 @@ BRAINTREE_ENDPOINTS: dict[str, BraintreeEndpointConfig] = {
         search_field="transactions",
         input_type="TransactionSearchInput",
         node_fields=_TRANSACTION_FIELDS,
+        created_at_search_field="createdAt",
     ),
     "refunds": BraintreeEndpointConfig(
         search_field="refunds",
         input_type="RefundSearchInput",
         node_fields=_REFUND_FIELDS,
+        created_at_search_field="createdAt",
     ),
     "disputes": BraintreeEndpointConfig(
         search_field="disputes",
@@ -90,6 +94,12 @@ BRAINTREE_ENDPOINTS: dict[str, BraintreeEndpointConfig] = {
 }
 
 ENDPOINTS = tuple(BRAINTREE_ENDPOINTS.keys())
+
+# An endpoint that can't filter server-side re-reads every row each run, so an append
+# sync would write the whole history again on every run. Only merge dedupes it.
+MERGE_ONLY_ENDPOINTS = tuple(
+    name for name, config in BRAINTREE_ENDPOINTS.items() if config.created_at_search_field is None
+)
 
 INCREMENTAL_FIELDS: dict[str, list[IncrementalField]] = {
     name: config.incremental_fields for name, config in BRAINTREE_ENDPOINTS.items() if config.incremental_fields

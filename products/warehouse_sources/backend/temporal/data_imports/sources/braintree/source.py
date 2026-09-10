@@ -23,6 +23,7 @@ from products.warehouse_sources.backend.temporal.data_imports.sources.braintree.
 from products.warehouse_sources.backend.temporal.data_imports.sources.braintree.settings import (
     ENDPOINTS,
     INCREMENTAL_FIELDS,
+    MERGE_ONLY_ENDPOINTS,
 )
 from products.warehouse_sources.backend.temporal.data_imports.sources.common.base import FieldType, ResumableSource
 from products.warehouse_sources.backend.temporal.data_imports.sources.common.canonical_descriptions import (
@@ -125,7 +126,12 @@ You can find your public and private keys in the [Braintree control panel](https
         force_refresh: bool = False,
         api_version: str | None = None,
     ) -> list[SourceSchema]:
-        return build_endpoint_schemas(ENDPOINTS, INCREMENTAL_FIELDS, names)
+        return build_endpoint_schemas(
+            ENDPOINTS,
+            INCREMENTAL_FIELDS,
+            names,
+            merge_only=MERGE_ONLY_ENDPOINTS,
+        )
 
     def validate_credentials(
         self,

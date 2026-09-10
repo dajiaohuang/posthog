@@ -140,51 +140,40 @@ class TestGetRows:
             requested = call.kwargs["json"]["variables"]["first"]
             assert 0 < requested <= MAX_PAGE_SIZE
 
+    # Expectations are literal, not derived from the config, so flipping an endpoint's
+    # created_at_search_field fails here instead of silently changing what is asserted.
+    # The suite mocks the HTTP layer, so a filter the vendor would reject otherwise looks
+    # identical to one it accepts. Verified against Braintree's published schema:
+    # DisputeSearchInput declares no createdAt, TransactionSearchInput/RefundSearchInput do.
+    @pytest.mark.parametrize(
+        "endpoint, expected",
+        [
+            ("transactions", {"createdAt": {"greaterThanOrEqualTo": "2024-01-02T00:00:00Z"}}),
+            ("refunds", {"createdAt": {"greaterThanOrEqualTo": "2024-01-02T00:00:00Z"}}),
+            ("disputes", {}),
+        ],
+    )
     @mock.patch(f"{_MODULE}.make_tracked_session")
-    def test_incremental_search_input_has_gte_filter(self, mock_session):
-        mock_session.return_value.post.return_value = _search_response("transactions", [])
+    def test_incremental_search_input_matches_endpoint_config(self, mock_session, endpoint, expected):
+        config = BRAINTREE_ENDPOINTS[endpoint]
+        mock_session.return_value.post.return_value = _search_response(config.search_field, [])
 
-        manager = _make_manager()
         list(
             get_rows(
                 "production",
                 "pub",
                 "priv",
-                "transactions",
+                endpoint,
                 _VERSION,
                 mock.MagicMock(),
-                manager,
+                _make_manager(),
                 should_use_incremental_field=True,
                 db_incremental_field_last_value=datetime(2024, 1, 2, tzinfo=UTC),
             )
         )
 
         variables = mock_session.return_value.post.call_args.kwargs["json"]["variables"]
-        assert variables["input"] == {"createdAt": {"greaterThanOrEqualTo": "2024-01-02T00:00:00Z"}}
-
-    @mock.patch(f"{_MODULE}.make_tracked_session")
-    def test_incremental_omits_filter_when_search_input_lacks_created_at(self, mock_session):
-        mock_session.return_value.post.return_value = _search_response("disputes", [])
-
-        manager = _make_manager()
-        list(
-            get_rows(
-                "production",
-                "pub",
-                "priv",
-                "disputes",
-                _VERSION,
-                mock.MagicMock(),
-                manager,
-                should_use_incremental_field=True,
-                db_incremental_field_last_value=datetime(2024, 1, 2, tzinfo=UTC),
-            )
-        )
-
-        # `DisputeSearchInput` declares no createdAt field, so filtering on it fails
-        # GraphQL validation and takes the whole sync down.
-        variables = mock_session.return_value.post.call_args.kwargs["json"]["variables"]
-        assert variables["input"] == {}
+        assert variables["input"] == expected
 
     @mock.patch(f"{_MODULE}.make_tracked_session")
     def test_full_scan_has_empty_input(self, mock_session):

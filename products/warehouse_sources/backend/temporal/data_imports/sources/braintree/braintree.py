@@ -155,8 +155,12 @@ def get_rows(
         if config.created_at_search_field is None:
             # The search input can't express the cursor, so the run re-reads everything
             # and the primary-key merge dedupes. Sending the filter anyway fails the
-            # whole sync on a GraphQL validation error.
-            logger.debug(f"Braintree: {endpoint} search input cannot filter on createdAt, re-reading all rows")
+            # whole sync on a GraphQL validation error. At info because debug is below
+            # the default log level, so the run's real cost would go unreported.
+            logger.info(
+                f"Braintree: the {endpoint} search input cannot filter on createdAt, "
+                f"so this run reads the full {endpoint} history"
+            )
         else:
             # `greaterThanOrEqualTo` re-fetches the boundary row (merge dedupes on
             # primary key) so records sharing the watermark are never skipped.

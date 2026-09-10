@@ -133,6 +133,18 @@ class TestBraintreeSource:
 
         assert mock_bt_source.call_args.kwargs["api_version"] == expected
 
+    # Literal, not derived from MERGE_ONLY_ENDPOINTS, so the assertion cannot follow a
+    # config change. Disputes re-read every row, and the append write has no primary-key
+    # merge, so offering append there would rewrite the whole history each run.
+    @pytest.mark.parametrize(
+        "endpoint, expected_append",
+        [("transactions", True), ("refunds", True), ("disputes", False)],
+    )
+    def test_endpoint_supports_append_only_when_it_can_filter_server_side(self, endpoint, expected_append):
+        schema = next(s for s in self.source.get_schemas(self.config, self.team_id) if s.name == endpoint)
+        assert schema.supports_append is expected_append
+        assert schema.supports_incremental is True
+
 
 class TestValidateCredentialsResolvedPin:
     @pytest.mark.parametrize(
