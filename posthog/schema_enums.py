@@ -3473,6 +3473,7 @@ class NodeKind(StrEnum):
     EXPERIMENT_QUERY = "ExperimentQuery"
     EXPERIMENT_EXPOSURE_QUERY = "ExperimentExposureQuery"
     EXPERIMENT_EVENT_EXPOSURE_CONFIG = "ExperimentEventExposureConfig"
+    EXPERIMENT_EXPOSURE_METRIC_SOURCE = "ExperimentExposureMetricSource"
     EXPERIMENT_ACTORS_QUERY = "ExperimentActorsQuery"
     EXPERIMENT_TRENDS_QUERY = "ExperimentTrendsQuery"
     EXPERIMENT_FUNNELS_QUERY = "ExperimentFunnelsQuery"

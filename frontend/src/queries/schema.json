@@ -24067,8 +24067,15 @@
                     "description": "For mean metrics: event source."
                 },
                 "start_event": {
-                    "$ref": "#/definitions/ExperimentApiEventSource",
-                    "description": "For retention metrics: start event."
+                    "anyOf": [
+                        {
+                            "$ref": "#/definitions/ExperimentApiEventSource"
+                        },
+                        {
+                            "$ref": "#/definitions/ExperimentExposureMetricSource"
+                        }
+                    ],
+                    "description": "For retention metrics: start event or the experiment's resolved exposure event."
                 },
                 "start_handling": {
                     "enum": ["first_seen", "last_seen"],
@@ -24294,6 +24301,25 @@
                 }
             },
             "required": ["conversionRateInputType"],
+            "type": "object"
+        },
+        "ExperimentExposureMetricSource": {
+            "additionalProperties": false,
+            "description": "Uses the experiment's resolved exposure event as the retention start event.",
+            "properties": {
+                "kind": {
+                    "const": "ExperimentExposureMetricSource",
+                    "type": "string"
+                },
+                "response": {
+                    "type": "object"
+                },
+                "version": {
+                    "description": "version of the node, used for schema migrations",
+                    "type": "number"
+                }
+            },
+            "required": ["kind"],
             "type": "object"
         },
         "ExperimentExposureQuery": {
@@ -25346,7 +25372,7 @@
                     "type": "number"
                 },
                 "start_event": {
-                    "$ref": "#/definitions/ExperimentMetricSource"
+                    "$ref": "#/definitions/ExperimentRetentionStartSource"
                 },
                 "start_handling": {
                     "enum": ["first_seen", "last_seen"],
@@ -25392,7 +25418,7 @@
                     "$ref": "#/definitions/FunnelConversionWindowTimeUnit"
                 },
                 "start_event": {
-                    "$ref": "#/definitions/ExperimentMetricSource"
+                    "$ref": "#/definitions/ExperimentRetentionStartSource"
                 },
                 "start_handling": {
                     "enum": ["first_seen", "last_seen"],
@@ -25408,6 +25434,21 @@
                 "retention_window_unit",
                 "start_handling"
             ],
+            "type": "object"
+        },
+        "ExperimentRetentionStartSource": {
+            "discriminator": {
+                "propertyName": "kind"
+            },
+            "oneOf": [
+                {
+                    "$ref": "#/definitions/ExperimentMetricSource"
+                },
+                {
+                    "$ref": "#/definitions/ExperimentExposureMetricSource"
+                }
+            ],
+            "required": ["kind"],
             "type": "object"
         },
         "ExperimentRunningTimeCalculation": {
@@ -38365,6 +38406,7 @@
                 "ExperimentQuery",
                 "ExperimentExposureQuery",
                 "ExperimentEventExposureConfig",
+                "ExperimentExposureMetricSource",
                 "ExperimentActorsQuery",
                 "ExperimentTrendsQuery",
                 "ExperimentFunnelsQuery",
