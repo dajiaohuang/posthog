@@ -5504,6 +5504,15 @@ export namespace Schemas {
       version?: number | null;
     }
 
+    export type ExperimentExposureMetricSourceResponse = { [key: string]: unknown } | null;
+
+    export interface ExperimentExposureMetricSource {
+      kind?: 'ExperimentExposureMetricSource';
+      response?: ExperimentExposureMetricSourceResponse;
+      /** version of the node, used for schema migrations */
+      version?: number | null;
+    }
+
     export type StartHandling = typeof StartHandling[keyof typeof StartHandling];
 
 
@@ -5530,7 +5539,7 @@ export namespace Schemas {
       retention_window_start: number;
       retention_window_unit: FunnelConversionWindowTimeUnit;
       sharedMetricId?: number | null;
-      start_event: EventsNode | ActionsNode | ExperimentDataWarehouseNode;
+      start_event: ExperimentExposureMetricSource | EventsNode | ActionsNode | ExperimentDataWarehouseNode;
       start_handling: StartHandling;
       uuid?: string | null;
       /** version of the node, used for schema migrations */
@@ -35545,8 +35554,8 @@ export namespace Schemas {
       series?: ExperimentApiEventSource[] | null;
       /** For mean metrics: event source. */
       source?: ExperimentApiEventSource | null;
-      /** For retention metrics: start event. */
-      start_event?: ExperimentApiEventSource | null;
+      /** For retention metrics: start event or the experiment's resolved exposure event. */
+      start_event?: ExperimentApiEventSource | ExperimentExposureMetricSource | null;
       start_handling?: StartHandling | null;
       /** For mean metrics: when set, reports the percentage of users whose per-user summed/counted value reaches or exceeds this threshold. Only meaningful for sum/count math types. */
       threshold?: number | null;
