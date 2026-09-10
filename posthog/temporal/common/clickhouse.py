@@ -100,6 +100,12 @@ class ClickHouseQueryStatus(enum.StrEnum):
     ERROR = "Error"
 
 
+# ClickHouse writes a query's outcome to the query log on a flush interval, so an error
+# recorded there is not readable the instant the query dies. We poll across that gap.
+QUERY_LOG_LOOKUP_ATTEMPTS = 5
+QUERY_LOG_LOOKUP_DELAY_SECONDS = 3.0
+
+
 class ChunkBytesAsyncStreamIterator:
     """Async iterator of HTTP chunk bytes.
 
@@ -830,6 +836,36 @@ class ClickHouseClient:
             self.logger.warning("Failed to read written rows from query log", query_id=query_id, exc_info=True)
             return None
 
+    async def araise_error_recorded_for_query(self, query_id: str | None, stream_error: BaseException) -> None:
+        """Raise the error ClickHouse recorded for a query, in place of a broken-stream error.
+
+        ClickHouse answers 200 as soon as it starts streaming a response, so a query that
+        dies after that point cannot be reported through the status code. What reaches the
+        client is a torn stream, which says nothing about why the query stopped. The query
+        log holds the real error.
+
+        Returns instead of raising whenever the log cannot answer, so the caller keeps the
+        error it already has. Not finding a record is not the same as finding a success.
+        """
+        if query_id is None:
+            return
+
+        for attempt in range(QUERY_LOG_LOOKUP_ATTEMPTS):
+            try:
+                await self.acheck_query(query_id, raise_on_error=True)
+            except ClickHouseQueryNotFound:
+                pass
+            except ClickHouseCheckQueryStatusError:
+                return
+            except ClickHouseError as recorded:
+                raise recorded from stream_error
+            else:
+                # ClickHouse is content with the query, so the break belongs to us.
+                return
+
+            if attempt < QUERY_LOG_LOOKUP_ATTEMPTS - 1:
+                await asyncio.sleep(QUERY_LOG_LOOKUP_DELAY_SECONDS)
+
     async def acheck_query_in_process_list(self, query_id: str) -> bool:
         """Check if a query is running in the ClickHouse process list.
 
@@ -933,9 +969,26 @@ class ClickHouseClient:
         """
         async with self.apost_query(query, *data, query_parameters=query_parameters, query_id=query_id) as response:
             reader = asyncpa.AsyncRecordBatchReader(ChunkBytesAsyncStreamIterator(response.content))
-            if on_schema is not None:
-                on_schema(await reader.get_schema())
-            async for batch in reader:
+
+            try:
+                if on_schema is not None:
+                    on_schema(await reader.get_schema())
+            except Exception as stream_error:
+                await self.araise_error_recorded_for_query(query_id, stream_error)
+                raise
+
+            batches = reader.__aiter__()
+            while True:
+                # Only reading is guarded. An exception raised by whoever consumes a batch is
+                # theirs, and must not be swapped for whatever the query log happens to hold.
+                try:
+                    batch = await batches.__anext__()
+                except StopAsyncIteration:
+                    break
+                except Exception as stream_error:
+                    await self.araise_error_recorded_for_query(query_id, stream_error)
+                    raise
+
                 yield batch
 
     async def aproduce_query_as_arrow_record_batches(

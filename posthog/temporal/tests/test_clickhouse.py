@@ -6,7 +6,10 @@ import contextlib
 import pytest
 from unittest.mock import MagicMock, patch
 
+import aiohttp
+
 from posthog.clickhouse.query_tagging import QueryTags
+from posthog.temporal.common import asyncpa
 from posthog.temporal.common.clickhouse import (
     ClickHouseAllReplicasAreStaleError,
     ClickHouseCheckQueryStatusError,
@@ -551,3 +554,98 @@ async def test_stream_query_as_jsonl_handles_whitespace_only_lines(clickhouse_cl
     assert results[0] == {"id": 1}
     assert results[1] == {"id": 2}
     assert results[2] == {"id": 3}
+
+
+@pytest.mark.parametrize(
+    "stream_error,recorded,expected_type,expected_fragment",
+    [
+        (
+            aiohttp.ClientPayloadError("Response payload is not completed"),
+            ClickHouseTooManyBytesError("Code: 307. Limit for bytes to read exceeded"),
+            ClickHouseTooManyBytesError,
+            "307",
+        ),
+        (
+            asyncpa.InvalidMessageFormat("Invalid message format"),
+            ClickHouseMemoryLimitExceededError("Code: 241. Memory limit (total) exceeded"),
+            ClickHouseMemoryLimitExceededError,
+            "241",
+        ),
+        (
+            aiohttp.ClientPayloadError("Response payload is not completed"),
+            ClickHouseQueryNotFound("some-query-id"),
+            aiohttp.ClientPayloadError,
+            "not completed",
+        ),
+        (
+            aiohttp.ClientPayloadError("Response payload is not completed"),
+            None,
+            aiohttp.ClientPayloadError,
+            "not completed",
+        ),
+    ],
+    ids=["recovers_bytes_limit", "recovers_memory_limit", "log_not_flushed", "query_finished_fine"],
+)
+async def test_astream_query_as_arrow_reports_what_clickhouse_recorded(
+    clickhouse_client, stream_error, recorded, expected_type, expected_fragment
+):
+    """ClickHouse sends 200 before it streams, so a later failure arrives as a torn stream.
+
+    The query log holds the real error. Recovering it is only half the contract: when the
+    log cannot answer, the transport error has to survive, because "the query ran fine" and
+    "we could not find out" are different facts and only one of them is the customer's.
+    """
+    mock_response = MagicMock()
+    mock_response.status = 200
+
+    async def mock_readchunk():
+        raise stream_error
+
+    mock_response.content.readchunk = mock_readchunk
+
+    @contextlib.asynccontextmanager
+    async def mock_post(*args, **kwargs):
+        yield mock_response
+
+    async def mock_check(query_id, raise_on_error=True):
+        if recorded is not None:
+            raise recorded
+        return ClickHouseQueryStatus.FINISHED
+
+    with (
+        patch.object(clickhouse_client, "apost_query", mock_post),
+        patch.object(clickhouse_client, "acheck_query", mock_check),
+        patch("posthog.temporal.common.clickhouse.QUERY_LOG_LOOKUP_ATTEMPTS", 1),
+        patch("posthog.temporal.common.clickhouse.QUERY_LOG_LOOKUP_DELAY_SECONDS", 0),
+    ):
+        with pytest.raises(expected_type) as exc_info:
+            async for _ in clickhouse_client.astream_query_as_arrow("SELECT 1", query_id="some-query-id"):
+                pass
+
+    assert expected_fragment in str(exc_info.value)
+
+
+async def test_astream_query_as_arrow_keeps_the_stream_error_when_no_query_id(clickhouse_client):
+    """Without a query id there is nothing to look up, so the caller keeps the error it got."""
+    mock_response = MagicMock()
+    mock_response.status = 200
+
+    async def mock_readchunk():
+        raise aiohttp.ClientPayloadError("Response payload is not completed")
+
+    mock_response.content.readchunk = mock_readchunk
+
+    @contextlib.asynccontextmanager
+    async def mock_post(*args, **kwargs):
+        yield mock_response
+
+    async def fail_if_called(query_id, raise_on_error=True):
+        raise AssertionError("must not look up a query log entry without a query id")
+
+    with (
+        patch.object(clickhouse_client, "apost_query", mock_post),
+        patch.object(clickhouse_client, "acheck_query", fail_if_called),
+    ):
+        with pytest.raises(aiohttp.ClientPayloadError):
+            async for _ in clickhouse_client.astream_query_as_arrow("SELECT 1"):
+                pass
